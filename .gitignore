@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+docs/ragas_results.json
+docs/cost_latency_results.json
+.DS_Store
