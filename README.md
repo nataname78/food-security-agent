@@ -13,8 +13,8 @@ architecture diagram and `REPORT.md` for the write-up.
 ## Setup
 
 ```bash
-git clone <your-repo-url>
-cd <your-repo>
+git clone https://github.com/nataname78/food-security-agent.git
+cd food-security-agent
 cp .env.example .env      # fill in MISTRAL_API_KEY (free tier: console.mistral.ai)
                           # Langfuse keys are optional — leave blank to disable tracing
 python -m venv .venv && source .venv/bin/activate   # optional but recommended
