@@ -132,8 +132,17 @@ def take_slot() -> str | None:
 
 def run_query(q: str) -> dict:
     async def _run():
-        async with agent.MCPToolClient() as mcp_client:
-            return await agent.run_agent(q, mcp_client=mcp_client)
+        # Enter/exit the MCP client by hand so that a teardown error (anyio cancel-scope
+        # quirk under Streamlit) cannot mask the real result or the real exception.
+        client = agent.MCPToolClient()
+        await client.__aenter__()
+        try:
+            return await agent.run_agent(q, mcp_client=client)
+        finally:
+            try:
+                await client.__aexit__(None, None, None)
+            except (Exception, BaseExceptionGroup):
+                pass
 
     return asyncio.run(_run())
 
