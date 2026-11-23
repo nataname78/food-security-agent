@@ -22,6 +22,8 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+import threading
+from datetime import date
 
 import streamlit as st
 
@@ -64,6 +66,32 @@ with st.form(key="question_form", clear_on_submit=False):
     ask = st.form_submit_button("Ask", type="primary")
 
 
+# --- Public-demo protection: the Mistral key is paid for by the author, so the
+# demo caps usage per visitor session and per day (both configurable via secrets).
+SESSION_CAP = int(os.getenv("DEMO_SESSION_CAP", "5"))
+DAILY_CAP = int(os.getenv("DEMO_DAILY_CAP", "60"))
+
+
+@st.cache_resource
+def _daily_counter() -> dict:
+    return {"day": date.today(), "n": 0, "lock": threading.Lock()}
+
+
+def take_slot() -> str | None:
+    """Reserve one question. Returns None if allowed, else a message explaining the limit."""
+    if st.session_state.get("used", 0) >= SESSION_CAP:
+        return f"Demo limit reached: {SESSION_CAP} questions per session. Reload the page to start a new session, or run the agent locally (see the GitHub repo)."
+    c = _daily_counter()
+    with c["lock"]:
+        if c["day"] != date.today():
+            c["day"], c["n"] = date.today(), 0
+        if c["n"] >= DAILY_CAP:
+            return "The demo has reached its daily question limit. Please come back tomorrow, or run the agent locally (see the GitHub repo)."
+        c["n"] += 1
+    st.session_state["used"] = st.session_state.get("used", 0) + 1
+    return None
+
+
 def run_query(q: str) -> dict:
     async def _run():
         async with agent.MCPToolClient() as mcp_client:
@@ -75,6 +103,8 @@ def run_query(q: str) -> dict:
 if ask:
     if not question.strip():
         st.warning("Type a question first.")
+    elif (limit := take_slot()) is not None:
+        st.warning(limit)
     else:
         with st.spinner("Retrieving evidence, synthesizing, running critic check..."):
             try:
