@@ -67,8 +67,45 @@ def span(name: str, **kwargs):
 # LLM call wrapper (Mistral, free tier)
 # ---------------------------------------------------------------------------
 
+def _call_openai_compatible(system_prompt: str, user_prompt: str, temperature: float) -> str:
+    """Any OpenAI-compatible provider (e.g. Gemini): LLM_BASE_URL, LLM_API_KEY, LLM_MODEL."""
+    import requests
+
+    key = os.getenv("LLM_API_KEY")
+    if not key:
+        raise RuntimeError("LLM_PROVIDER=openai but LLM_API_KEY is not set.")
+    base = os.getenv("LLM_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai")
+    body = {
+        "model": os.getenv("LLM_MODEL", "gemini-flash-latest"),
+        "temperature": temperature,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+    }
+    effort = os.getenv("LLM_REASONING", "low")
+    if effort != "off":
+        body["reasoning_effort"] = effort
+    with span("llm-call", input={"system": system_prompt[:200], "user": user_prompt[:500]}):
+        for attempt in range(6):
+            r = requests.post(
+                base.rstrip("/") + "/chat/completions",
+                headers={"Authorization": f"Bearer {key}"},
+                json=body,
+                timeout=120,
+            )
+            if r.status_code == 429 and attempt < 5:
+                time.sleep(4 * (attempt + 1))
+                continue
+            r.raise_for_status()
+            return r.json()["choices"][0]["message"].get("content") or ""
+    return ""
+
+
 def call_llm(system_prompt: str, user_prompt: str, temperature: float = 0.7) -> str:
-    """One Mistral chat completion call. Raises if MISTRAL_API_KEY is missing."""
+    """One chat completion call (Mistral by default). Raises if the API key is missing."""
+    if os.getenv("LLM_PROVIDER", "mistral").lower() == "openai":
+        return _call_openai_compatible(system_prompt, user_prompt, temperature)
     from mistralai.client import Mistral
 
     api_key = os.getenv("MISTRAL_API_KEY")
