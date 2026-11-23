@@ -76,14 +76,22 @@ def call_llm(system_prompt: str, user_prompt: str, temperature: float = 0.7) -> 
         raise RuntimeError("MISTRAL_API_KEY not set — copy .env.example to .env and fill it in.")
     client = Mistral(api_key=api_key)
     with span("llm-call", input={"system": system_prompt[:200], "user": user_prompt[:500]}):
-        resp = client.chat.complete(
-            model=MISTRAL_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=temperature,
-        )
+        # Free tier: back off and retry on HTTP 429 instead of failing the whole run.
+        for attempt in range(6):
+            try:
+                resp = client.chat.complete(
+                    model=MISTRAL_MODEL,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    temperature=temperature,
+                )
+                break
+            except Exception as e:
+                if "429" not in str(e) or attempt == 5:
+                    raise
+                time.sleep(2 * (attempt + 1))
         text = resp.choices[0].message.content
     return text
 
